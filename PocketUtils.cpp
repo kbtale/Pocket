@@ -13,6 +13,19 @@ namespace PocketUtils {
         return false;
     }
 
+    bool IsNpcapInRegistry() {
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Npcap", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            return true;
+        }
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Npcap", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            return true;
+        }
+        return false;
+    }
+
     std::wstring GetNpcapErrorMessage() {
         return L"Npcap was not found on this system.\n\n"
                L"Verify Npcap installation and that 'WinPcap API-compatible mode' was enabled during installation.\n\n"

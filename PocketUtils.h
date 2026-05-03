@@ -3,6 +3,7 @@
 
 namespace PocketUtils {
     bool IsNpcapAvailable();
+    bool IsNpcapInRegistry();
 
     std::wstring GetNpcapErrorMessage();
 
