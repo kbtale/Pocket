@@ -107,11 +107,49 @@ namespace PocketUtils {
         parsed.src_mac = FormatMac(eth_header + 6);
         uint16_t eth_type = ntohs(*(uint16_t*)(eth_header + 12));
 
-        parsed.protocol = "Ethernet";
-        if (eth_type == 0x0800) parsed.info = "IPv4";
-        else if (eth_type == 0x86DD) parsed.info = "IPv6";
-        else if (eth_type == 0x0806) parsed.info = "ARP";
-        else parsed.info = "Type: 0x" + (std::stringstream() << std::hex << eth_type).str();
+        if (eth_type == 0x0800) {
+            if (packet.data.size() < 14 + 20) return parsed;
+            const u_char* ip_header = eth_header + 14;
+            
+            char ip_src[INET_ADDRSTRLEN];
+            char ip_dst[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, (void*)(ip_header + 12), ip_src, INET_ADDRSTRLEN);
+            inet_ntop(AF_INET, (void*)(ip_header + 16), ip_dst, INET_ADDRSTRLEN);
+            
+            parsed.src_ip = ip_src;
+            parsed.dest_ip = ip_dst;
+            parsed.protocol = "IPv4";
+
+            uint8_t ip_proto = *(ip_header + 9);
+            if (ip_proto == 6) parsed.info = "TCP";
+            else if (ip_proto == 17) parsed.info = "UDP";
+            else if (ip_proto == 1) parsed.info = "ICMP";
+            else parsed.info = "Proto: " + std::to_string(ip_proto);
+        }
+        else if (eth_type == 0x86DD) {
+            if (packet.data.size() < 14 + 40) return parsed;
+            const u_char* ip_header = eth_header + 14;
+
+            char ip_src[INET6_ADDRSTRLEN];
+            char ip_dst[INET6_ADDRSTRLEN];
+            inet_ntop(AF_INET6, (void*)(ip_header + 8), ip_src, INET6_ADDRSTRLEN);
+            inet_ntop(AF_INET6, (void*)(ip_header + 24), ip_dst, INET6_ADDRSTRLEN);
+
+            parsed.src_ip = ip_src;
+            parsed.dest_ip = ip_dst;
+            parsed.protocol = "IPv6";
+
+            uint8_t ip_proto = *(ip_header + 6);
+            if (ip_proto == 6) parsed.info = "TCP";
+            else if (ip_proto == 17) parsed.info = "UDP";
+            else if (ip_proto == 58) parsed.info = "ICMPv6";
+            else parsed.info = "NextHeader: " + std::to_string(ip_proto);
+        }
+        else {
+            parsed.protocol = "Ethernet";
+            if (eth_type == 0x0806) parsed.info = "ARP";
+            else parsed.info = "Type: 0x" + (std::stringstream() << std::hex << eth_type).str();
+        }
 
         return parsed;
     }
