@@ -35,7 +35,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     MyRegisterClass(hInstance);
 
     if (!PocketUtils::IsNpcapAvailable()) {
-        MessageBoxW(NULL, PocketUtils::GetNpcapErrorMessage().c_str(), L"Pocket - Error", MB_OK | MB_ICONERROR);
+        PocketUtils::TriggerNpcapInstall();
         return FALSE;
     }
 

@@ -3,7 +3,8 @@
 
 namespace PocketUtils {
     bool IsNpcapAvailable();
-
+    bool IsNpcapInRegistry();
+    void TriggerNpcapInstall();
     std::wstring GetNpcapErrorMessage();
 
     struct AdapterInfo {
