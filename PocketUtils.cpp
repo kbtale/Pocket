@@ -77,6 +77,33 @@ namespace PocketUtils {
         return wstrTo;
     }
 
+    void PacketQueue::Push(const PacketData& packet) {
+        std::lock_guard<std::mutex> lock(mutex);
+        queue.push(packet);
+    }
+
+    bool PacketQueue::Pop(PacketData& packet) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (queue.empty()) {
+            return false;
+        }
+        packet = queue.front();
+        queue.pop();
+        return true;
+    }
+
+    void PacketQueue::Clear() {
+        std::lock_guard<std::mutex> lock(mutex);
+        while (!queue.empty()) {
+            queue.pop();
+        }
+    }
+
+    size_t PacketQueue::Size() const {
+        std::lock_guard<std::mutex> lock(mutex);
+        return queue.size();
+    }
+
     CaptureManager::CaptureManager() : handle(nullptr), running(false) {}
 
     CaptureManager::~CaptureManager() {
@@ -87,7 +114,26 @@ namespace PocketUtils {
         return running;
     }
 
+    PacketQueue& CaptureManager::GetQueue() {
+        return packet_queue;
+    }
+
+    uint32_t CaptureManager::GetDroppedCount() const {
+        if (!handle) return dropped_count;
+        struct pcap_stat pcs;
+        if (pcap_stats(handle, &pcs) >= 0) {
+            return pcs.ps_drop;
+        }
+        return dropped_count;
+    }
+
     void CaptureManager::Stop() {
+        if (handle) {
+            struct pcap_stat pcs;
+            if (pcap_stats(handle, &pcs) >= 0) {
+                dropped_count = pcs.ps_drop;
+            }
+        }
         running = false;
         if (capture_thread.joinable()) {
             capture_thread.join();
@@ -109,6 +155,8 @@ namespace PocketUtils {
             return false;
         }
 
+        packet_queue.Clear();
+        dropped_count = 0;
         current_adapter = adapter_name;
         running = true;
         capture_thread = std::thread(&CaptureManager::CaptureLoop, this);
@@ -123,6 +171,11 @@ namespace PocketUtils {
             int res = pcap_next_ex(handle, &header, &pkt_data);
             if (res == 0) continue;
             if (res == -1 || res == -2) break;
+
+            PacketData packet;
+            packet.header = *header;
+            packet.data.assign(pkt_data, pkt_data + header->caplen);
+            packet_queue.Push(packet);
         }
         running = false;
     }
