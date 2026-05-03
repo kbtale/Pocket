@@ -16,6 +16,8 @@
 #define IDC_START_STOP      111
 #define IDC_PACKET_LIST     112
 #define IDT_TIMER           113
+#define IDC_CLEAR           114
+#define IDC_AUTOSCROLL      115
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1

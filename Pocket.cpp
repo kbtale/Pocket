@@ -121,6 +121,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
                 420, 10, 120, 25, hWnd, (HMENU)IDC_START_STOP, hInst, NULL);
 
+            CreateWindowW(WC_BUTTON, L"Clear",
+                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                550, 10, 80, 25, hWnd, (HMENU)IDC_CLEAR, hInst, NULL);
+
+            CreateWindowW(WC_BUTTON, L"Auto-scroll",
+                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
+                640, 10, 100, 25, hWnd, (HMENU)IDC_AUTOSCROLL, hInst, NULL);
+
+            SendMessageW(GetDlgItem(hWnd, IDC_AUTOSCROLL), BM_SETCHECK, BST_CHECKED, 0);
+
             hList = CreateWindowW(WC_LISTVIEW, L"",
                 WS_CHILD | LVS_REPORT | LVS_OWNERDATA | WS_VISIBLE | WS_BORDER | WS_VSCROLL,
                 10, 45, 760, 500, hWnd, (HMENU)IDC_PACKET_LIST, hInst, NULL);
@@ -163,6 +173,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
                 if (changed) {
                     ListView_SetItemCountEx(hList, g_Packets.size(), LVSICF_NOSCROLL);
+                    if (SendMessageW(GetDlgItem(hWnd, IDC_AUTOSCROLL), BM_GETCHECK, 0, 0) == BST_CHECKED) {
+                        ListView_EnsureVisible(hList, g_Packets.size() - 1, FALSE);
+                    }
                 }
             }
         }
@@ -215,6 +228,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             }
                         }
                     }
+                }
+                break;
+            case IDC_CLEAR:
+                if (wmEvent == BN_CLICKED) {
+                    g_Packets.clear();
+                    ListView_SetItemCountEx(hList, 0, LVSICF_NOSCROLL);
+                    ListView_Update(hList, -1);
                 }
                 break;
             case IDM_ABOUT:
