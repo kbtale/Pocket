@@ -13,6 +13,7 @@ WCHAR szWindowClass[MAX_LOADSTRING];
 
 PocketUtils::CaptureManager g_CaptureManager;
 std::vector<PocketUtils::AdapterInfo> g_Adapters;
+std::vector<PocketUtils::ParsedPacket> g_Packets;
 
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -102,10 +103,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     static HWND hCombo;
     static HWND hBtn;
+    static HWND hList;
     switch (message)
     {
     case WM_CREATE:
         {
+            INITCOMMONCONTROLSEX icex;
+            icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+            icex.dwICC = ICC_LISTVIEW_CLASSES;
+            InitCommonControlsEx(&icex);
+
             hCombo = CreateWindowW(WC_COMBOBOX, L"", 
                 CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_CHILD | WS_OVERLAPPED | WS_VISIBLE | WS_VSCROLL,
                 10, 10, 400, 200, hWnd, (HMENU)IDC_ADAPTER_LIST, hInst, NULL);
@@ -113,6 +120,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             hBtn = CreateWindowW(WC_BUTTON, L"Start Capture",
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
                 420, 10, 120, 25, hWnd, (HMENU)IDC_START_STOP, hInst, NULL);
+
+            hList = CreateWindowW(WC_LISTVIEW, L"",
+                WS_CHILD | LVS_REPORT | LVS_OWNERDATA | WS_VISIBLE | WS_BORDER | WS_VSCROLL,
+                10, 45, 760, 500, hWnd, (HMENU)IDC_PACKET_LIST, hInst, NULL);
+
+            ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_GRIDLINES);
+
+            LVCOLUMNW lvc;
+            lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
+            
+            const wchar_t* columns[] = { L"No.", L"Time", L"Source", L"Destination", L"Protocol", L"Length", L"Info" };
+            int widths[] = { 50, 100, 130, 130, 80, 60, 200 };
+
+            for (int i = 0; i < 7; i++) {
+                lvc.iSubItem = i;
+                lvc.pszText = (LPWSTR)columns[i];
+                lvc.cx = widths[i];
+                lvc.fmt = LVCFMT_LEFT;
+                ListView_InsertColumn(hList, i, &lvc);
+            }
 
             std::string err;
             g_Adapters = PocketUtils::GetAdapters(err);

@@ -14,6 +14,7 @@
 #define IDC_POCKET			109
 #define IDC_ADAPTER_LIST    110
 #define IDC_START_STOP      111
+#define IDC_PACKET_LIST     112
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
