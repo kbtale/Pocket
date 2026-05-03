@@ -110,6 +110,7 @@ namespace PocketUtils {
         if (eth_type == 0x0800) {
             if (packet.data.size() < 14 + 20) return parsed;
             const u_char* ip_header = eth_header + 14;
+            uint8_t ihl = (*ip_header & 0x0F) * 4;
             
             char ip_src[INET_ADDRSTRLEN];
             char ip_dst[INET_ADDRSTRLEN];
@@ -121,8 +122,13 @@ namespace PocketUtils {
             parsed.protocol = "IPv4";
 
             uint8_t ip_proto = *(ip_header + 9);
-            if (ip_proto == 6) parsed.info = "TCP";
-            else if (ip_proto == 17) parsed.info = "UDP";
+            const u_char* l4_header = ip_header + ihl;
+            if ((ip_proto == 6 || ip_proto == 17) && packet.data.size() >= (size_t)(14 + ihl + 4)) {
+                parsed.src_port = ntohs(*(uint16_t*)l4_header);
+                parsed.dest_port = ntohs(*(uint16_t*)(l4_header + 2));
+                parsed.info = (ip_proto == 6 ? "TCP" : "UDP");
+                parsed.info += " " + std::to_string(parsed.src_port) + " -> " + std::to_string(parsed.dest_port);
+            }
             else if (ip_proto == 1) parsed.info = "ICMP";
             else parsed.info = "Proto: " + std::to_string(ip_proto);
         }
@@ -140,8 +146,13 @@ namespace PocketUtils {
             parsed.protocol = "IPv6";
 
             uint8_t ip_proto = *(ip_header + 6);
-            if (ip_proto == 6) parsed.info = "TCP";
-            else if (ip_proto == 17) parsed.info = "UDP";
+            const u_char* l4_header = ip_header + 40;
+            if ((ip_proto == 6 || ip_proto == 17) && packet.data.size() >= 14 + 40 + 4) {
+                parsed.src_port = ntohs(*(uint16_t*)l4_header);
+                parsed.dest_port = ntohs(*(uint16_t*)(l4_header + 2));
+                parsed.info = (ip_proto == 6 ? "TCP" : "UDP");
+                parsed.info += " " + std::to_string(parsed.src_port) + " -> " + std::to_string(parsed.dest_port);
+            }
             else if (ip_proto == 58) parsed.info = "ICMPv6";
             else parsed.info = "NextHeader: " + std::to_string(ip_proto);
         }
