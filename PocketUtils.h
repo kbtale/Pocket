@@ -28,6 +28,8 @@ namespace PocketUtils {
         uint32_t length;
         std::string timestamp;
         std::string info;
+        uint32_t payload_offset;
+        uint32_t payload_length;
     };
 
     class ProtocolParser {

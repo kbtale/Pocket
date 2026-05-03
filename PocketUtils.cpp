@@ -88,9 +88,22 @@ namespace PocketUtils {
         return ss.str();
     }
 
+    std::string GetAppProtocol(uint16_t port) {
+        if (port == 80) return "HTTP";
+        if (port == 443) return "HTTPS";
+        if (port == 53) return "DNS";
+        if (port == 21) return "FTP";
+        if (port == 22) return "SSH";
+        if (port == 23) return "TELNET";
+        if (port == 3389) return "RDP";
+        return "";
+    }
+
     ParsedPacket ProtocolParser::Parse(const PacketData& packet) {
         ParsedPacket parsed;
         parsed.length = packet.header.len;
+        parsed.payload_offset = 0;
+        parsed.payload_length = 0;
         
         char time_buf[64];
         struct tm ltm;
@@ -123,10 +136,27 @@ namespace PocketUtils {
 
             uint8_t ip_proto = *(ip_header + 9);
             const u_char* l4_header = ip_header + ihl;
-            if ((ip_proto == 6 || ip_proto == 17) && packet.data.size() >= (size_t)(14 + ihl + 4)) {
+            if (packet.data.size() >= (size_t)(14 + ihl + 4)) {
                 parsed.src_port = ntohs(*(uint16_t*)l4_header);
                 parsed.dest_port = ntohs(*(uint16_t*)(l4_header + 2));
-                parsed.info = (ip_proto == 6 ? "TCP" : "UDP");
+                
+                if (ip_proto == 6) {
+                    parsed.info = "TCP";
+                    uint8_t tcp_len = ((*(l4_header + 12)) >> 4) * 4;
+                    parsed.payload_offset = 14 + ihl + tcp_len;
+                } else if (ip_proto == 17) {
+                    parsed.info = "UDP";
+                    parsed.payload_offset = 14 + ihl + 8;
+                }
+
+                if (parsed.payload_offset > 0 && packet.data.size() > parsed.payload_offset) {
+                    parsed.payload_length = (uint32_t)packet.data.size() - parsed.payload_offset;
+                }
+
+                std::string app_proto = GetAppProtocol(parsed.src_port);
+                if (app_proto.empty()) app_proto = GetAppProtocol(parsed.dest_port);
+                
+                if (!app_proto.empty()) parsed.info = app_proto;
                 parsed.info += " " + std::to_string(parsed.src_port) + " -> " + std::to_string(parsed.dest_port);
             }
             else if (ip_proto == 1) parsed.info = "ICMP";
@@ -147,10 +177,27 @@ namespace PocketUtils {
 
             uint8_t ip_proto = *(ip_header + 6);
             const u_char* l4_header = ip_header + 40;
-            if ((ip_proto == 6 || ip_proto == 17) && packet.data.size() >= 14 + 40 + 4) {
+            if (packet.data.size() >= 14 + 40 + 4) {
                 parsed.src_port = ntohs(*(uint16_t*)l4_header);
                 parsed.dest_port = ntohs(*(uint16_t*)(l4_header + 2));
-                parsed.info = (ip_proto == 6 ? "TCP" : "UDP");
+
+                if (ip_proto == 6) {
+                    parsed.info = "TCP";
+                    uint8_t tcp_len = ((*(l4_header + 12)) >> 4) * 4;
+                    parsed.payload_offset = 14 + 40 + tcp_len;
+                } else if (ip_proto == 17) {
+                    parsed.info = "UDP";
+                    parsed.payload_offset = 14 + 40 + 8;
+                }
+
+                if (parsed.payload_offset > 0 && packet.data.size() > parsed.payload_offset) {
+                    parsed.payload_length = (uint32_t)packet.data.size() - parsed.payload_offset;
+                }
+
+                std::string app_proto = GetAppProtocol(parsed.src_port);
+                if (app_proto.empty()) app_proto = GetAppProtocol(parsed.dest_port);
+
+                if (!app_proto.empty()) parsed.info = app_proto;
                 parsed.info += " " + std::to_string(parsed.src_port) + " -> " + std::to_string(parsed.dest_port);
             }
             else if (ip_proto == 58) parsed.info = "ICMPv6";
