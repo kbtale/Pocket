@@ -97,4 +97,33 @@ namespace PocketUtils {
             handle = nullptr;
         }
     }
+
+    bool CaptureManager::Start(const std::string& adapter_name) {
+        if (running) {
+            return false;
+        }
+
+        char errbuf[PCAP_ERRBUF_SIZE];
+        handle = pcap_open_live(adapter_name.c_str(), 65535, 1, 1000, errbuf);
+        if (!handle) {
+            return false;
+        }
+
+        current_adapter = adapter_name;
+        running = true;
+        capture_thread = std::thread(&CaptureManager::CaptureLoop, this);
+        return true;
+    }
+
+    void CaptureManager::CaptureLoop() {
+        pcap_pkthdr* header;
+        const u_char* pkt_data;
+
+        while (running) {
+            int res = pcap_next_ex(handle, &header, &pkt_data);
+            if (res == 0) continue;
+            if (res == -1 || res == -2) break;
+        }
+        running = false;
+    }
 }
