@@ -13,6 +13,7 @@ WCHAR szWindowClass[MAX_LOADSTRING];
 
 PocketUtils::CaptureManager g_CaptureManager;
 std::vector<PocketUtils::AdapterInfo> g_Adapters;
+std::vector<PocketUtils::ParsedPacket> g_Packets;
 
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -24,6 +25,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_ LPWSTR    lpCmdLine,
                      _In_ int       nCmdShow)
 {
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
@@ -102,10 +105,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     static HWND hCombo;
     static HWND hBtn;
+    static HWND hList;
     switch (message)
     {
     case WM_CREATE:
         {
+            INITCOMMONCONTROLSEX icex;
+            icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+            icex.dwICC = ICC_LISTVIEW_CLASSES;
+            InitCommonControlsEx(&icex);
+
             hCombo = CreateWindowW(WC_COMBOBOX, L"", 
                 CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_CHILD | WS_OVERLAPPED | WS_VISIBLE | WS_VSCROLL,
                 10, 10, 400, 200, hWnd, (HMENU)IDC_ADAPTER_LIST, hInst, NULL);
@@ -114,6 +123,36 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
                 420, 10, 120, 25, hWnd, (HMENU)IDC_START_STOP, hInst, NULL);
 
+            CreateWindowW(WC_BUTTON, L"Clear",
+                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                550, 10, 80, 25, hWnd, (HMENU)IDC_CLEAR, hInst, NULL);
+
+            CreateWindowW(WC_BUTTON, L"Auto-scroll",
+                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
+                640, 10, 100, 25, hWnd, (HMENU)IDC_AUTOSCROLL, hInst, NULL);
+
+            SendMessageW(GetDlgItem(hWnd, IDC_AUTOSCROLL), BM_SETCHECK, BST_CHECKED, 0);
+
+            hList = CreateWindowW(WC_LISTVIEW, L"",
+                WS_CHILD | LVS_REPORT | LVS_OWNERDATA | WS_VISIBLE | WS_BORDER | WS_VSCROLL,
+                10, 45, 760, 500, hWnd, (HMENU)IDC_PACKET_LIST, hInst, NULL);
+
+            ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_GRIDLINES);
+
+            LVCOLUMNW lvc;
+            lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
+            
+            const wchar_t* columns[] = { L"No.", L"Time", L"Source", L"Destination", L"Protocol", L"Length", L"Info" };
+            int widths[] = { 50, 100, 130, 130, 80, 60, 200 };
+
+            for (int i = 0; i < 7; i++) {
+                lvc.iSubItem = i;
+                lvc.pszText = (LPWSTR)columns[i];
+                lvc.cx = widths[i];
+                lvc.fmt = LVCFMT_LEFT;
+                ListView_InsertColumn(hList, i, &lvc);
+            }
+
             std::string err;
             g_Adapters = PocketUtils::GetAdapters(err);
             for (const auto& adapter : g_Adapters) {
@@ -121,6 +160,76 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)desc.c_str());
             }
             SendMessageW(hCombo, CB_SETCURSEL, 0, 0);
+
+            SetTimer(hWnd, IDT_TIMER, 100, NULL);
+        }
+        break;
+    case WM_TIMER:
+        {
+            if (wParam == IDT_TIMER) {
+                PocketUtils::PacketData pkt;
+                bool changed = false;
+                while (g_CaptureManager.GetQueue().Pop(pkt)) {
+                    g_Packets.push_back(PocketUtils::ProtocolParser::Parse(pkt));
+                    changed = true;
+                }
+                if (changed) {
+                    ListView_SetItemCountEx(hList, g_Packets.size(), LVSICF_NOSCROLL);
+                    if (SendMessageW(GetDlgItem(hWnd, IDC_AUTOSCROLL), BM_GETCHECK, 0, 0) == BST_CHECKED) {
+                        ListView_EnsureVisible(hList, g_Packets.size() - 1, FALSE);
+                    }
+                }
+            }
+        }
+        break;
+    case WM_NOTIFY:
+        {
+            LPNMHDR lpnmhdr = (LPNMHDR)lParam;
+            if (lpnmhdr->code == LVN_GETDISPINFO) {
+                NMLVDISPINFO* plvdi = (NMLVDISPINFO*)lParam;
+                if (plvdi->item.mask & LVIF_TEXT) {
+                    int row = plvdi->item.iItem;
+                    int col = plvdi->item.iSubItem;
+                    if (row < (int)g_Packets.size()) {
+                        const auto& p = g_Packets[row];
+                        std::wstring text;
+                        switch (col) {
+                        case 0: text = std::to_wstring(row + 1); break;
+                        case 1: text = PocketUtils::ConvertToWide(p.timestamp); break;
+                        case 2: text = PocketUtils::ConvertToWide(p.src_ip.empty() ? p.src_mac : p.src_ip); break;
+                        case 3: text = PocketUtils::ConvertToWide(p.dest_ip.empty() ? p.dest_mac : p.dest_ip); break;
+                        case 4: text = PocketUtils::ConvertToWide(p.protocol); break;
+                        case 5: text = std::to_wstring(p.length); break;
+                        case 6: text = PocketUtils::ConvertToWide(p.info); break;
+                        }
+                        wcsncpy_s(plvdi->item.pszText, plvdi->item.cchTextMax, text.c_str(), _TRUNCATE);
+                    }
+                }
+            }
+            else if (lpnmhdr->code == NM_CUSTOMDRAW && lpnmhdr->idFrom == IDC_PACKET_LIST) {
+                LPNMLVCUSTOMDRAW lplvcd = (LPNMLVCUSTOMDRAW)lParam;
+                switch (lplvcd->nmcd.dwDrawStage) {
+                case CDDS_PREPAINT:
+                    return CDRF_NOTIFYITEMDRAW;
+                case CDDS_ITEMPREPAINT:
+                    {
+                        int row = (int)lplvcd->nmcd.dwItemSpec;
+                        if (row < (int)g_Packets.size()) {
+                            const auto& p = g_Packets[row];
+                            if (p.info.find("TCP") != std::string::npos || p.info.find("HTTP") != std::string::npos || p.info.find("HTTPS") != std::string::npos) {
+                                lplvcd->clrTextBk = RGB(230, 255, 230);
+                            }
+                            else if (p.info.find("UDP") != std::string::npos || p.info.find("DNS") != std::string::npos) {
+                                lplvcd->clrTextBk = RGB(230, 240, 255);
+                            }
+                            else if (p.info.find("ICMP") != std::string::npos || p.info.find("ARP") != std::string::npos) {
+                                lplvcd->clrTextBk = RGB(255, 230, 230);
+                            }
+                        }
+                        return CDRF_DODEFAULT;
+                    }
+                }
+            }
         }
         break;
     case WM_COMMAND:
@@ -145,6 +254,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             }
                         }
                     }
+                }
+                break;
+            case IDC_CLEAR:
+                if (wmEvent == BN_CLICKED) {
+                    g_Packets.clear();
+                    ListView_SetItemCountEx(hList, 0, LVSICF_NOSCROLL);
+                    ListView_Update(hList, -1);
                 }
                 break;
             case IDM_ABOUT:
