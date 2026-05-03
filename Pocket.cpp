@@ -148,6 +148,49 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)desc.c_str());
             }
             SendMessageW(hCombo, CB_SETCURSEL, 0, 0);
+
+            SetTimer(hWnd, IDT_TIMER, 100, NULL);
+        }
+        break;
+    case WM_TIMER:
+        {
+            if (wParam == IDT_TIMER) {
+                PocketUtils::PacketData pkt;
+                bool changed = false;
+                while (g_CaptureManager.GetQueue().Pop(pkt)) {
+                    g_Packets.push_back(PocketUtils::ProtocolParser::Parse(pkt));
+                    changed = true;
+                }
+                if (changed) {
+                    ListView_SetItemCountEx(hList, g_Packets.size(), LVSICF_NOSCROLL);
+                }
+            }
+        }
+        break;
+    case WM_NOTIFY:
+        {
+            LPNMHDR lpnmhdr = (LPNMHDR)lParam;
+            if (lpnmhdr->code == LVN_GETDISPINFO) {
+                NMLVDISPINFO* plvdi = (NMLVDISPINFO*)lParam;
+                if (plvdi->item.mask & LVIF_TEXT) {
+                    int row = plvdi->item.iItem;
+                    int col = plvdi->item.iSubItem;
+                    if (row < (int)g_Packets.size()) {
+                        const auto& p = g_Packets[row];
+                        std::wstring text;
+                        switch (col) {
+                        case 0: text = std::to_wstring(row + 1); break;
+                        case 1: text = PocketUtils::ConvertToWide(p.timestamp); break;
+                        case 2: text = PocketUtils::ConvertToWide(p.src_ip.empty() ? p.src_mac : p.src_ip); break;
+                        case 3: text = PocketUtils::ConvertToWide(p.dest_ip.empty() ? p.dest_mac : p.dest_ip); break;
+                        case 4: text = PocketUtils::ConvertToWide(p.protocol); break;
+                        case 5: text = std::to_wstring(p.length); break;
+                        case 6: text = PocketUtils::ConvertToWide(p.info); break;
+                        }
+                        wcsncpy_s(plvdi->item.pszText, plvdi->item.cchTextMax, text.c_str(), _TRUNCATE);
+                    }
+                }
+            }
         }
         break;
     case WM_COMMAND:

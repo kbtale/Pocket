@@ -15,6 +15,7 @@
 #define IDC_ADAPTER_LIST    110
 #define IDC_START_STOP      111
 #define IDC_PACKET_LIST     112
+#define IDT_TIMER           113
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
