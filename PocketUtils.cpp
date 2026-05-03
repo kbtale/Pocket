@@ -118,7 +118,22 @@ namespace PocketUtils {
         return packet_queue;
     }
 
+    uint32_t CaptureManager::GetDroppedCount() const {
+        if (!handle) return dropped_count;
+        struct pcap_stat pcs;
+        if (pcap_stats(handle, &pcs) >= 0) {
+            return pcs.ps_drop;
+        }
+        return dropped_count;
+    }
+
     void CaptureManager::Stop() {
+        if (handle) {
+            struct pcap_stat pcs;
+            if (pcap_stats(handle, &pcs) >= 0) {
+                dropped_count = pcs.ps_drop;
+            }
+        }
         running = false;
         if (capture_thread.joinable()) {
             capture_thread.join();
@@ -141,6 +156,7 @@ namespace PocketUtils {
         }
 
         packet_queue.Clear();
+        dropped_count = 0;
         current_adapter = adapter_name;
         running = true;
         capture_thread = std::thread(&CaptureManager::CaptureLoop, this);

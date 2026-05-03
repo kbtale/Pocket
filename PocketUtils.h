@@ -44,6 +44,7 @@ namespace PocketUtils {
         void Stop();
         bool IsRunning() const;
         PacketQueue& GetQueue();
+        uint32_t GetDroppedCount() const;
 
     private:
         void CaptureLoop();
@@ -53,5 +54,6 @@ namespace PocketUtils {
         std::atomic<bool> running;
         std::string current_adapter;
         PacketQueue packet_queue;
+        std::atomic<uint32_t> dropped_count;
     };
 }
