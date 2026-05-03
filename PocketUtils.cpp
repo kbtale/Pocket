@@ -17,12 +17,13 @@ namespace PocketUtils {
                L"Download available at https://npcap.com/";
     }
 
-    std::vector<AdapterInfo> GetAdapters() {
+    std::vector<AdapterInfo> GetAdapters(std::string& err) {
         std::vector<AdapterInfo> adapters;
         pcap_if_t* alldevs;
         char errbuf[PCAP_ERRBUF_SIZE];
 
         if (pcap_findalldevs(&alldevs, errbuf) == -1) {
+            err = errbuf;
             return adapters;
         }
 
@@ -52,5 +53,19 @@ namespace PocketUtils {
 
         pcap_freealldevs(alldevs);
         return adapters;
+    }
+
+    bool IsAdmin() {
+        BOOL result = FALSE;
+        PSID admin_group = NULL;
+        SID_IDENTIFIER_AUTHORITY nt_authority = SECURITY_NT_AUTHORITY;
+
+        if (AllocateAndInitializeSid(&nt_authority, 2, SECURITY_BUILTIN_DOMAIN_RID,
+            DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &admin_group)) {
+            CheckTokenMembership(NULL, admin_group, &result);
+            FreeSid(admin_group);
+        }
+
+        return result == TRUE;
     }
 }

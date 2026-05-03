@@ -12,5 +12,7 @@ namespace PocketUtils {
         std::vector<std::string> addresses;
     };
 
-    std::vector<AdapterInfo> GetAdapters();
+    std::vector<AdapterInfo> GetAdapters(std::string& err);
+
+    bool IsAdmin();
 }
