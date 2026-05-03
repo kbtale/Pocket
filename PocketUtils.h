@@ -12,6 +12,23 @@ namespace PocketUtils {
         std::vector<std::string> addresses;
     };
 
+    struct PacketData {
+        std::vector<u_char> data;
+        struct pcap_pkthdr header;
+    };
+
+    class PacketQueue {
+    public:
+        void Push(const PacketData& packet);
+        bool Pop(PacketData& packet);
+        void Clear();
+        size_t Size() const;
+
+    private:
+        std::queue<PacketData> queue;
+        mutable std::mutex mutex;
+    };
+
     std::vector<AdapterInfo> GetAdapters(std::string& err);
 
     bool IsAdmin();
@@ -26,6 +43,7 @@ namespace PocketUtils {
         bool Start(const std::string& adapter_name);
         void Stop();
         bool IsRunning() const;
+        PacketQueue& GetQueue();
 
     private:
         void CaptureLoop();
@@ -34,5 +52,6 @@ namespace PocketUtils {
         std::thread capture_thread;
         std::atomic<bool> running;
         std::string current_adapter;
+        PacketQueue packet_queue;
     };
 }
