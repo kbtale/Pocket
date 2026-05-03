@@ -16,4 +16,41 @@ namespace PocketUtils {
                L"Verify Npcap installation and that 'WinPcap API-compatible mode' was enabled during installation.\n\n"
                L"Download available at https://npcap.com/";
     }
+
+    std::vector<AdapterInfo> GetAdapters() {
+        std::vector<AdapterInfo> adapters;
+        pcap_if_t* alldevs;
+        char errbuf[PCAP_ERRBUF_SIZE];
+
+        if (pcap_findalldevs(&alldevs, errbuf) == -1) {
+            return adapters;
+        }
+
+        for (pcap_if_t* d = alldevs; d != NULL; d = d->next) {
+            AdapterInfo info;
+            info.name = d->name;
+            info.description = d->description ? d->description : "No description available";
+
+            for (pcap_addr_t* a = d->addresses; a != NULL; a = a->next) {
+                if (a->addr->sa_family == AF_INET) {
+                    char ip[INET_ADDRSTRLEN];
+                    sockaddr_in* s = (sockaddr_in*)a->addr;
+                    if (inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip))) {
+                        info.addresses.push_back(ip);
+                    }
+                }
+                else if (a->addr->sa_family == AF_INET6) {
+                    char ip[INET6_ADDRSTRLEN];
+                    sockaddr_in6* s = (sockaddr_in6*)a->addr;
+                    if (inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip))) {
+                        info.addresses.push_back(ip);
+                    }
+                }
+            }
+            adapters.push_back(info);
+        }
+
+        pcap_freealldevs(alldevs);
+        return adapters;
+    }
 }
