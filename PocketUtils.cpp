@@ -26,10 +26,23 @@ namespace PocketUtils {
         return false;
     }
 
+    void TriggerNpcapInstall() {
+        wchar_t temp_path[MAX_PATH];
+        GetTempPathW(MAX_PATH, temp_path);
+        std::wstring installer_path = std::wstring(temp_path) + L"npcap_installer.exe";
+
+        HRESULT hr = URLDownloadToFileW(NULL, L"https://npcap.com/dist/npcap-1.87.exe", installer_path.c_str(), 0, NULL);
+        if (SUCCEEDED(hr)) {
+            ShellExecuteW(NULL, L"runas", installer_path.c_str(), L"/S", NULL, SW_SHOWNORMAL);
+        }
+        else {
+            MessageBoxW(NULL, L"Failed to download Npcap driver. Please install Npcap manually.", L"Pocket - Error", MB_OK | MB_ICONERROR);
+        }
+    }
+
     std::wstring GetNpcapErrorMessage() {
         return L"Npcap was not found on this system.\n\n"
-               L"Verify Npcap installation and that 'WinPcap API-compatible mode' was enabled during installation.\n\n"
-               L"Download available at https://npcap.com/";
+               L"Verify Npcap installation and that 'WinPcap API-compatible mode' was enabled during installation.";
     }
 
     std::vector<AdapterInfo> GetAdapters(std::string& err) {
