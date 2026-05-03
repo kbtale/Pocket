@@ -12,6 +12,7 @@
 #define IDI_POCKET			107
 #define IDI_SMALL				108
 #define IDC_POCKET			109
+#define IDC_ADAPTER_LIST    110
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1

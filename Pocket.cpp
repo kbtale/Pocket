@@ -97,8 +97,24 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    static HWND hCombo;
     switch (message)
     {
+    case WM_CREATE:
+        {
+            hCombo = CreateWindowW(WC_COMBOBOX, L"", 
+                CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_CHILD | WS_OVERLAPPED | WS_VISIBLE | WS_VSCROLL,
+                10, 10, 400, 200, hWnd, (HMENU)IDC_ADAPTER_LIST, hInst, NULL);
+
+            std::string err;
+            std::vector<PocketUtils::AdapterInfo> adapters = PocketUtils::GetAdapters(err);
+            for (const auto& adapter : adapters) {
+                std::wstring desc = PocketUtils::ConvertToWide(adapter.description);
+                SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)desc.c_str());
+            }
+            SendMessageW(hCombo, CB_SETCURSEL, 0, 0);
+        }
+        break;
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
