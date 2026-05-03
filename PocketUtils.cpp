@@ -76,4 +76,25 @@ namespace PocketUtils {
         MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstrTo[0], size_needed);
         return wstrTo;
     }
+
+    CaptureManager::CaptureManager() : handle(nullptr), running(false) {}
+
+    CaptureManager::~CaptureManager() {
+        Stop();
+    }
+
+    bool CaptureManager::IsRunning() const {
+        return running;
+    }
+
+    void CaptureManager::Stop() {
+        running = false;
+        if (capture_thread.joinable()) {
+            capture_thread.join();
+        }
+        if (handle) {
+            pcap_close(handle);
+            handle = nullptr;
+        }
+    }
 }
