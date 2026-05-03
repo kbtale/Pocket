@@ -204,6 +204,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     }
                 }
             }
+            else if (lpnmhdr->code == NM_CUSTOMDRAW && lpnmhdr->idFrom == IDC_PACKET_LIST) {
+                LPNMLVCUSTOMDRAW lplvcd = (LPNMLVCUSTOMDRAW)lParam;
+                switch (lplvcd->nmcd.dwDrawStage) {
+                case CDDS_PREPAINT:
+                    return CDRF_NOTIFYITEMDRAW;
+                case CDDS_ITEMPREPAINT:
+                    {
+                        int row = (int)lplvcd->nmcd.dwItemSpec;
+                        if (row < (int)g_Packets.size()) {
+                            const auto& p = g_Packets[row];
+                            if (p.info.find("TCP") != std::string::npos || p.info.find("HTTP") != std::string::npos || p.info.find("HTTPS") != std::string::npos) {
+                                lplvcd->clrTextBk = RGB(230, 255, 230);
+                            }
+                            else if (p.info.find("UDP") != std::string::npos || p.info.find("DNS") != std::string::npos) {
+                                lplvcd->clrTextBk = RGB(230, 240, 255);
+                            }
+                            else if (p.info.find("ICMP") != std::string::npos || p.info.find("ARP") != std::string::npos) {
+                                lplvcd->clrTextBk = RGB(255, 230, 230);
+                            }
+                        }
+                        return CDRF_DODEFAULT;
+                    }
+                }
+            }
         }
         break;
     case WM_COMMAND:
