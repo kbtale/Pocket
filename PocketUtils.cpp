@@ -1,4 +1,6 @@
 #include "PocketUtils.h"
+#include <iomanip>
+#include <sstream>
 
 namespace PocketUtils {
 
@@ -75,6 +77,43 @@ namespace PocketUtils {
         std::wstring wstrTo(size_needed, 0);
         MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstrTo[0], size_needed);
         return wstrTo;
+    }
+
+    std::string FormatMac(const u_char* mac) {
+        std::stringstream ss;
+        ss << std::hex << std::setfill('0');
+        for (int i = 0; i < 6; ++i) {
+            ss << std::setw(2) << (int)mac[i] << (i < 5 ? ":" : "");
+        }
+        return ss.str();
+    }
+
+    ParsedPacket ProtocolParser::Parse(const PacketData& packet) {
+        ParsedPacket parsed;
+        parsed.length = packet.header.len;
+        
+        char time_buf[64];
+        struct tm ltm;
+        time_t local_tv_sec = packet.header.ts.tv_sec;
+        localtime_s(&ltm, &local_tv_sec);
+        strftime(time_buf, sizeof(time_buf), "%H:%M:%S", &ltm);
+        sprintf_s(time_buf + strlen(time_buf), sizeof(time_buf) - strlen(time_buf), ".%06ld", packet.header.ts.tv_usec);
+        parsed.timestamp = time_buf;
+
+        if (packet.data.size() < 14) return parsed;
+
+        const u_char* eth_header = packet.data.data();
+        parsed.dest_mac = FormatMac(eth_header);
+        parsed.src_mac = FormatMac(eth_header + 6);
+        uint16_t eth_type = ntohs(*(uint16_t*)(eth_header + 12));
+
+        parsed.protocol = "Ethernet";
+        if (eth_type == 0x0800) parsed.info = "IPv4";
+        else if (eth_type == 0x86DD) parsed.info = "IPv6";
+        else if (eth_type == 0x0806) parsed.info = "ARP";
+        else parsed.info = "Type: 0x" + (std::stringstream() << std::hex << eth_type).str();
+
+        return parsed;
     }
 
     void PacketQueue::Push(const PacketData& packet) {
