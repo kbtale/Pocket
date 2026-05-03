@@ -20,14 +20,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "x64\Release\Pocket.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Pocket.ico"; DestDir: "{app}"
-Source: "redist\npcap-installer.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
 Name: "{autoprograms}\Pocket"; Filename: "{app}\Pocket.exe"; IconFilename: "{app}\Pocket.ico"
 Name: "{autodesktop}\Pocket"; Filename: "{app}\Pocket.exe"; Tasks: desktopicon; IconFilename: "{app}\Pocket.ico"
-
-[Run]
-Filename: "{tmp}\npcap-installer.exe"; Parameters: "/S"; StatusMsg: "Installing Npcap..."; Check: NeedsNpcap
 
 [Code]
 function NeedsNpcap(): Boolean;

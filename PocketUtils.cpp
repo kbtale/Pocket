@@ -33,7 +33,8 @@ namespace PocketUtils {
 
         HRESULT hr = URLDownloadToFileW(NULL, L"https://npcap.com/dist/npcap-1.87.exe", installer_path.c_str(), 0, NULL);
         if (SUCCEEDED(hr)) {
-            ShellExecuteW(NULL, L"runas", installer_path.c_str(), L"/S", NULL, SW_SHOWNORMAL);
+            MessageBoxW(NULL, L"Npcap is required but was not found. The installer will now launch—please follow the prompts to complete the setup.", L"Pocket - Setup Required", MB_OK | MB_ICONINFORMATION);
+            ShellExecuteW(NULL, L"runas", installer_path.c_str(), NULL, NULL, SW_SHOWNORMAL);
         }
         else {
             MessageBoxW(NULL, L"Failed to download Npcap driver. Please install Npcap manually.", L"Pocket - Error", MB_OK | MB_ICONERROR);

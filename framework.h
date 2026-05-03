@@ -15,6 +15,8 @@
 #include <thread>
 #include <mutex>
 #include <queue>
+#include <urlmon.h>
+#include <shellapi.h>
 
 // Npcap Header Files
 #include <pcap.h>
