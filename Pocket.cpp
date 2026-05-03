@@ -11,6 +11,9 @@ HINSTANCE hInst;
 WCHAR szTitle[MAX_LOADSTRING];
 WCHAR szWindowClass[MAX_LOADSTRING];
 
+PocketUtils::CaptureManager g_CaptureManager;
+std::vector<PocketUtils::AdapterInfo> g_Adapters;
+
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -98,6 +101,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     static HWND hCombo;
+    static HWND hBtn;
     switch (message)
     {
     case WM_CREATE:
@@ -106,9 +110,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_CHILD | WS_OVERLAPPED | WS_VISIBLE | WS_VSCROLL,
                 10, 10, 400, 200, hWnd, (HMENU)IDC_ADAPTER_LIST, hInst, NULL);
 
+            hBtn = CreateWindowW(WC_BUTTON, L"Start Capture",
+                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+                420, 10, 120, 25, hWnd, (HMENU)IDC_START_STOP, hInst, NULL);
+
             std::string err;
-            std::vector<PocketUtils::AdapterInfo> adapters = PocketUtils::GetAdapters(err);
-            for (const auto& adapter : adapters) {
+            g_Adapters = PocketUtils::GetAdapters(err);
+            for (const auto& adapter : g_Adapters) {
                 std::wstring desc = PocketUtils::ConvertToWide(adapter.description);
                 SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)desc.c_str());
             }
@@ -118,8 +126,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
+            int wmEvent = HIWORD(wParam);
             switch (wmId)
             {
+            case IDC_START_STOP:
+                if (wmEvent == BN_CLICKED) {
+                    if (g_CaptureManager.IsRunning()) {
+                        g_CaptureManager.Stop();
+                        SetWindowTextW(hBtn, L"Start Capture");
+                        EnableWindow(hCombo, TRUE);
+                    }
+                    else {
+                        int index = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
+                        if (index != CB_ERR && index < (int)g_Adapters.size()) {
+                            if (g_CaptureManager.Start(g_Adapters[index].name)) {
+                                SetWindowTextW(hBtn, L"Stop Capture");
+                                EnableWindow(hCombo, FALSE);
+                            }
+                        }
+                    }
+                }
+                break;
             case IDM_ABOUT:
                 DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
                 break;
