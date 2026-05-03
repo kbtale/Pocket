@@ -17,6 +17,26 @@ namespace PocketUtils {
         struct pcap_pkthdr header;
     };
 
+    struct ParsedPacket {
+        std::string src_mac;
+        std::string dest_mac;
+        std::string src_ip;
+        std::string dest_ip;
+        std::string protocol;
+        uint16_t src_port;
+        uint16_t dest_port;
+        uint32_t length;
+        std::string timestamp;
+        std::string info;
+        uint32_t payload_offset;
+        uint32_t payload_length;
+    };
+
+    class ProtocolParser {
+    public:
+        static ParsedPacket Parse(const PacketData& packet);
+    };
+
     class PacketQueue {
     public:
         void Push(const PacketData& packet);
