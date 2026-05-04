@@ -26,8 +26,7 @@ void UpdateLayout(HWND hWnd);
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
                      _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
-{
+                     _In_ int       nCmdShow) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     UNREFERENCED_PARAMETER(hPrevInstance);
@@ -44,19 +43,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
 
-    if (!InitInstance (hInstance, nCmdShow))
-    {
+    if (!InitInstance (hInstance, nCmdShow)) {
         return FALSE;
     }
 
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_POCKET));
-
     MSG msg;
 
-    while (GetMessage(&msg, nullptr, 0, 0))
-    {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-        {
+    while (GetMessage(&msg, nullptr, 0, 0)) {
+        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
@@ -65,14 +60,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     return (int) msg.wParam;
 }
 
-
-
-ATOM MyRegisterClass(HINSTANCE hInstance)
-{
-    WNDCLASSEXW wcex;
-
-    wcex.cbSize = sizeof(WNDCLASSEX);
-
+ATOM MyRegisterClass(HINSTANCE hInstance) {
+    WNDCLASSEXW wcex = { sizeof(WNDCLASSEX) };
     wcex.style          = CS_HREDRAW | CS_VREDRAW;
     wcex.lpfnWndProc    = WndProc;
     wcex.cbClsExtra     = 0;
@@ -80,29 +69,22 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     wcex.hInstance      = hInstance;
     wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_POCKET));
     wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
+    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW + 1);
     wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_POCKET);
     wcex.lpszClassName  = szWindowClass;
     wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
-
     return RegisterClassExW(&wcex);
 }
 
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
-{
+BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
    hInst = hInstance;
-
    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+      CW_USEDEFAULT, 0, 1000, 700, nullptr, nullptr, hInstance, nullptr);
 
-   if (!hWnd)
-   {
-      return FALSE;
-   }
+   if (!hWnd) return FALSE;
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
-
    return TRUE;
 }
 
@@ -134,16 +116,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
         LVCOLUMNW lvc = { 0 };
         lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
-        const wchar_t* headers[] = { L"No.", L"Time", L"Source", L"Destination", L"Protocol", L"Length", L"Info" };
-        int widths[] = { 50, 150, 140, 140, 80, 70, 300 };
+        const wchar_t* headers[] = { L"No.", L"Time", L"Adapter", L"Source", L"Destination", L"Protocol", L"Length", L"Info" };
+        int widths[] = { 50, 100, 120, 140, 140, 80, 70, 300 };
 
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < 8; i++) {
             lvc.iSubItem = i;
             lvc.pszText = (LPWSTR)headers[i];
             lvc.cx = widths[i];
             SendMessage(hPacketList, LVM_INSERTCOLUMNW, i, (LPARAM)&lvc);
         }
 
+        SendMessageW(hAdapterList, CB_ADDSTRING, 0, (LPARAM)L"All Adapters");
         std::string err;
         auto adapters = PocketUtils::GetAdapters(err);
         for (const auto& adapter : adapters) {
@@ -154,18 +137,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         SetTimer(hWnd, IDT_TIMER, 100, nullptr);
         break;
     }
-
-            std::string err;
-            g_Adapters = PocketUtils::GetAdapters(err);
-            for (const auto& adapter : g_Adapters) {
-                std::wstring desc = PocketUtils::ConvertToWide(adapter.description);
-                SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)desc.c_str());
-            }
-            SendMessageW(hCombo, CB_SETCURSEL, 0, 0);
-
-            SetTimer(hWnd, IDT_TIMER, 100, NULL);
-        }
-        break;
     case WM_SIZE:
         UpdateLayout(hWnd);
         break;
@@ -176,8 +147,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 int sel = (int)SendMessage(hAdapterList, CB_GETCURSEL, 0, 0);
                 std::string err;
                 auto adapters = PocketUtils::GetAdapters(err);
-                if (sel >= 0 && sel < (int)adapters.size()) {
-                    if (engine.Start(adapters[sel].name)) {
+                std::vector<std::string> targets;
+                
+                if (sel == 0) {
+                    for (const auto& a : adapters) targets.push_back(a.name);
+                } else if (sel > 0 && sel <= (int)adapters.size()) {
+                    targets.push_back(adapters[sel - 1].name);
+                }
+
+                if (!targets.empty()) {
+                    if (engine.Start(targets)) {
                         SetWindowTextW(hStartStop, L"Stop");
                     }
                 }
@@ -208,11 +187,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                         switch (pdi->item.iSubItem) {
                             case 0: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%d", pdi->item.iItem + 1); break;
                             case 1: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.timestamp.c_str()); break;
-                            case 2: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.src_ip.empty() ? parsed.src_mac.c_str() : parsed.src_ip.c_str()); break;
-                            case 3: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.dest_ip.empty() ? parsed.dest_mac.c_str() : parsed.dest_ip.c_str()); break;
-                            case 4: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.protocol.c_str()); break;
-                            case 5: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%d", parsed.length); break;
-                            case 6: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.info.c_str()); break;
+                            case 2: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.adapter.c_str()); break;
+                            case 3: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.src_ip.empty() ? parsed.src_mac.c_str() : parsed.src_ip.c_str()); break;
+                            case 4: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.dest_ip.empty() ? parsed.dest_mac.c_str() : parsed.dest_ip.c_str()); break;
+                            case 5: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.protocol.c_str()); break;
+                            case 6: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%d", parsed.length); break;
+                            case 7: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.info.c_str()); break;
                         }
                     }
                 }
@@ -261,7 +241,7 @@ void UpdateLayout(HWND hWnd) {
     int w = rect.right - rect.left;
     int h = rect.bottom - rect.top;
 
-    MoveWindow(hAdapterList, 10, 10, w - 320, 30, TRUE);
+    MoveWindow(hAdapterList, 10, 10, w - 320, 200, TRUE);
     MoveWindow(hStartStop, w - 300, 10, 80, 25, TRUE);
     MoveWindow(hClear, w - 210, 10, 80, 25, TRUE);
     MoveWindow(hAutoScroll, w - 120, 10, 110, 25, TRUE);

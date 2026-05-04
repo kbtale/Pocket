@@ -16,6 +16,7 @@ namespace PocketUtils {
     struct PacketData {
         std::vector<u_char> data;
         struct pcap_pkthdr header;
+        std::string adapter;
     };
 
     struct ParsedPacket {
@@ -29,6 +30,7 @@ namespace PocketUtils {
         uint32_t length;
         std::string timestamp;
         std::string info;
+        std::string adapter;
         uint32_t payload_offset;
         uint32_t payload_length;
     };
@@ -56,26 +58,32 @@ namespace PocketUtils {
 
     std::wstring ConvertToWide(const std::string& str);
 
-    class CaptureManager {
+    class CaptureEngine {
     public:
-        CaptureManager();
-        ~CaptureManager();
+        CaptureEngine();
+        ~CaptureEngine();
 
-        bool Start(const std::string& adapter_name);
+        bool Start(const std::vector<std::string>& adapter_names);
         void Stop();
         bool IsRunning() const;
-        PacketQueue& GetQueue();
+        void GetPackets(std::vector<PacketData>& packets);
         uint32_t GetDroppedCount() const;
+        std::string GetLastError() const;
 
     private:
-        void CaptureLoop();
+        struct HandleContext {
+            pcap_t* handle;
+            HANDLE event;
+            std::string name;
+        };
 
-        pcap_t* handle;
-        std::thread capture_thread;
+        void WorkerLoop();
+
+        std::vector<HandleContext> contexts;
+        std::thread worker_thread;
         std::atomic<bool> running;
-        std::string current_adapter;
         PacketQueue packet_queue;
-        std::atomic<uint32_t> dropped_count;
+        std::string last_error;
     };
 
     std::wstring GetPacketDetails(const PacketData& packet);
