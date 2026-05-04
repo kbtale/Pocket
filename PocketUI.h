@@ -37,6 +37,7 @@ private:
     HRESULT CreateResources();
     void DiscardResources();
     std::wstring ResolveAdapterName(const std::string& rawName);
+    void RenderCharts(D2D1_RECT_F rect, const std::vector<PocketUtils::PacketData>& packets);
 
     HWND m_hWnd;
     ID2D1Factory* m_pFactory;
@@ -56,6 +57,7 @@ private:
     UINT m_width;
     UINT m_height;
     int m_scrollPos;
+    int m_detailsScrollPos;
     int m_selectedIdx;
     bool m_startRequested;
     bool m_clearRequested;
