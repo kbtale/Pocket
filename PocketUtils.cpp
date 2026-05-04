@@ -33,7 +33,18 @@ namespace PocketUtils {
 
         HRESULT hr = URLDownloadToFileW(NULL, L"https://npcap.com/dist/npcap-1.87.exe", installer_path.c_str(), 0, NULL);
         if (SUCCEEDED(hr)) {
-            ShellExecuteW(NULL, L"runas", installer_path.c_str(), L"/S", NULL, SW_SHOWNORMAL);
+            MessageBoxW(NULL, L"Npcap is required but was not found. The installer will now launch—please follow the prompts to complete the setup.", L"Pocket - Setup Required", MB_OK | MB_ICONINFORMATION);
+            
+            SHELLEXECUTEINFOW sei = { sizeof(sei) };
+            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+            sei.lpVerb = L"runas";
+            sei.lpFile = installer_path.c_str();
+            sei.nShow = SW_SHOWNORMAL;
+
+            if (ShellExecuteExW(&sei)) {
+                WaitForSingleObject(sei.hProcess, INFINITE);
+                CloseHandle(sei.hProcess);
+            }
         }
         else {
             MessageBoxW(NULL, L"Failed to download Npcap driver. Please install Npcap manually.", L"Pocket - Error", MB_OK | MB_ICONERROR);
@@ -128,6 +139,7 @@ namespace PocketUtils {
     ParsedPacket ProtocolParser::Parse(const PacketData& packet) {
         ParsedPacket parsed;
         parsed.length = packet.header.len;
+        parsed.adapter = packet.adapter;
         parsed.payload_offset = 0;
         parsed.payload_length = 0;
         
@@ -245,9 +257,7 @@ namespace PocketUtils {
 
     bool PacketQueue::Pop(PacketData& packet) {
         std::lock_guard<std::mutex> lock(mutex);
-        if (queue.empty()) {
-            return false;
-        }
+        if (queue.empty()) return false;
         packet = queue.front();
         queue.pop();
         return true;
@@ -255,9 +265,7 @@ namespace PocketUtils {
 
     void PacketQueue::Clear() {
         std::lock_guard<std::mutex> lock(mutex);
-        while (!queue.empty()) {
-            queue.pop();
-        }
+        while (!queue.empty()) queue.pop();
     }
 
     size_t PacketQueue::Size() const {
@@ -265,79 +273,145 @@ namespace PocketUtils {
         return queue.size();
     }
 
-    CaptureManager::CaptureManager() : handle(nullptr), running(false) {}
+    CaptureEngine::CaptureEngine() : running(false) {}
 
-    CaptureManager::~CaptureManager() {
+    CaptureEngine::~CaptureEngine() {
         Stop();
     }
 
-    bool CaptureManager::IsRunning() const {
-        return running;
-    }
+    bool CaptureEngine::Start(const std::vector<std::string>& adapter_names) {
+        if (running) return false;
+        last_error.clear();
+        contexts.clear();
 
-    PacketQueue& CaptureManager::GetQueue() {
-        return packet_queue;
-    }
-
-    uint32_t CaptureManager::GetDroppedCount() const {
-        if (!handle) return dropped_count;
-        struct pcap_stat pcs;
-        if (pcap_stats(handle, &pcs) >= 0) {
-            return pcs.ps_drop;
-        }
-        return dropped_count;
-    }
-
-    void CaptureManager::Stop() {
-        if (handle) {
-            struct pcap_stat pcs;
-            if (pcap_stats(handle, &pcs) >= 0) {
-                dropped_count = pcs.ps_drop;
+        for (const auto& name : adapter_names) {
+            char errbuf[PCAP_ERRBUF_SIZE];
+            pcap_t* h = pcap_open_live(name.c_str(), 65536, 1, 100, errbuf);
+            if (!h) {
+                last_error = errbuf;
+                continue;
+            }
+            
+            HANDLE ev = pcap_getevent(h);
+            if (ev != NULL) {
+                contexts.push_back({ h, ev, name });
+            } else {
+                pcap_close(h);
             }
         }
-        running = false;
-        if (capture_thread.joinable()) {
-            capture_thread.join();
-        }
-        if (handle) {
-            pcap_close(handle);
-            handle = nullptr;
-        }
-    }
 
-    bool CaptureManager::Start(const std::string& adapter_name) {
-        if (running) {
-            return false;
-        }
+        if (contexts.empty()) return false;
 
-        char errbuf[PCAP_ERRBUF_SIZE];
-        handle = pcap_open_live(adapter_name.c_str(), 65535, 1, 1000, errbuf);
-        if (!handle) {
-            return false;
-        }
-
-        packet_queue.Clear();
-        dropped_count = 0;
-        current_adapter = adapter_name;
         running = true;
-        capture_thread = std::thread(&CaptureManager::CaptureLoop, this);
+        worker_thread = std::thread(&CaptureEngine::WorkerLoop, this);
         return true;
     }
 
-    void CaptureManager::CaptureLoop() {
-        pcap_pkthdr* header;
-        const u_char* pkt_data;
+    void CaptureEngine::Stop() {
+        running = false;
+        if (worker_thread.joinable()) worker_thread.join();
+        for (const auto& ctx : contexts) {
+            pcap_close(ctx.handle);
+        }
+        contexts.clear();
+    }
+
+    bool CaptureEngine::IsRunning() const {
+        return running;
+    }
+
+    void CaptureEngine::GetPackets(std::vector<PacketData>& packets) {
+        PacketData pkt;
+        while (packet_queue.Pop(pkt)) {
+            packets.push_back(pkt);
+        }
+    }
+
+    uint32_t CaptureEngine::GetDroppedCount() const {
+        uint32_t total = 0;
+        for (const auto& ctx : contexts) {
+            struct pcap_stat ps;
+            if (pcap_stats(ctx.handle, &ps) == 0) total += ps.ps_drop;
+        }
+        return total;
+    }
+
+    std::string CaptureEngine::GetLastError() const {
+        return last_error;
+    }
+
+    void CaptureEngine::WorkerLoop() {
+        std::vector<HANDLE> events;
+        for (const auto& ctx : contexts) events.push_back(ctx.event);
 
         while (running) {
-            int res = pcap_next_ex(handle, &header, &pkt_data);
-            if (res == 0) continue;
-            if (res == -1 || res == -2) break;
-
-            PacketData packet;
-            packet.header = *header;
-            packet.data.assign(pkt_data, pkt_data + header->caplen);
-            packet_queue.Push(packet);
+            DWORD res = WaitForMultipleObjects((DWORD)events.size(), events.data(), FALSE, 100);
+            if (res >= WAIT_OBJECT_0 && res < WAIT_OBJECT_0 + events.size()) {
+                size_t idx = res - WAIT_OBJECT_0;
+                struct pcap_pkthdr* header;
+                const u_char* pkt_data;
+                
+                while (pcap_next_ex(contexts[idx].handle, &header, &pkt_data) == 1) {
+                    PacketData packet;
+                    packet.header = *header;
+                    packet.adapter = contexts[idx].name;
+                    packet.data.assign(pkt_data, pkt_data + header->caplen);
+                    packet_queue.Push(packet);
+                }
+            }
         }
-        running = false;
+    }
+
+    std::wstring GetPacketDetails(const PacketData& packet) {
+        ParsedPacket parsed = ProtocolParser::Parse(packet);
+        std::wstringstream ss;
+
+        ss << L"--- Frame Details ---\r\n";
+        ss << L"Arrival Time: " << std::wstring(parsed.timestamp.begin(), parsed.timestamp.end()) << L"\r\n";
+        ss << L"Frame Length: " << parsed.length << L" bytes\r\n\r\n";
+
+        ss << L"--- Ethernet II ---\r\n";
+        ss << L"Source MAC: " << std::wstring(parsed.src_mac.begin(), parsed.src_mac.end()) << L"\r\n";
+        ss << L"Dest MAC: " << std::wstring(parsed.dest_mac.begin(), parsed.dest_mac.end()) << L"\r\n\r\n";
+
+        if (parsed.protocol != "ARP" && !parsed.src_ip.empty()) {
+            ss << L"--- Internet Protocol ---\r\n";
+            ss << L"Source IP: " << std::wstring(parsed.src_ip.begin(), parsed.src_ip.end()) << L"\r\n";
+            ss << L"Dest IP: " << std::wstring(parsed.dest_ip.begin(), parsed.dest_ip.end()) << L"\r\n\r\n";
+        }
+
+        if (parsed.src_port != 0 || parsed.dest_port != 0) {
+            ss << L"--- Transport Layer ---\r\n";
+            ss << L"Protocol: " << std::wstring(parsed.protocol.begin(), parsed.protocol.end()) << L"\r\n";
+            ss << L"Src Port: " << parsed.src_port << L"\r\n";
+            ss << L"Dest Port: " << parsed.dest_port << L"\r\n\r\n";
+        }
+
+        ss << L"--- Raw Data (Hex) ---\r\n";
+        const u_char* data = packet.data.data();
+        uint32_t len = (uint32_t)packet.data.size();
+
+        for (uint32_t i = 0; i < len; i += 16) {
+            ss << std::hex << std::setw(4) << std::setfill(L'0') << i << L":  ";
+            
+            for (uint32_t j = 0; j < 16; j++) {
+                if (i + j < len)
+                    ss << std::hex << std::setw(2) << std::setfill(L'0') << (int)data[i + j] << L" ";
+                else
+                    ss << L"   ";
+                if (j == 7) ss << L" ";
+            }
+
+            ss << L" ";
+            for (uint32_t j = 0; j < 16; j++) {
+                if (i + j < len) {
+                    char c = (char)data[i + j];
+                    ss << (isprint((unsigned char)c) ? (wchar_t)c : L'.');
+                }
+            }
+            ss << L"\r\n";
+        }
+
+        return ss.str();
     }
 }

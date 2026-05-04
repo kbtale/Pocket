@@ -364,3 +364,5 @@ FodyWeavers.xsd
 
 *.md
 !README.md
+Output/
+scratch/

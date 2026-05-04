@@ -18,6 +18,8 @@
 #define IDT_TIMER           113
 #define IDC_CLEAR           114
 #define IDC_AUTOSCROLL      115
+#define IDC_DETAILS_PANE    116
+#define IDC_STATUS_BAR      117
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
