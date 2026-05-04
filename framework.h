@@ -1,11 +1,18 @@
 #pragma once
 
-#include "targetver.h"
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <commctrl.h>
+#endif
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include "targetver.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#include <commctrl.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <memory.h>
@@ -19,8 +26,6 @@
 #include <iomanip>
 #include <urlmon.h>
 #include <shellapi.h>
-
-// Npcap Header Files
 #include <pcap.h>
 
 #pragma comment(lib, "comctl32.lib")

@@ -141,7 +141,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(ProjectDir)npcap\Lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Packet.lib;wpcap.lib;Ws2_32.lib;urlmon.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d2d1.lib;dwrite.lib;wpcap.lib;Packet.lib;ws2_32.lib;iphlpapi.lib;urlmon.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <DelayLoadDLLs>wpcap.dll;Packet.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
   </ItemDefinitionGroup>
@@ -150,11 +150,13 @@
     <ClInclude Include="Pocket.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="PocketUtils.h" />
+    <ClInclude Include="PocketUI.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Pocket.cpp" />
     <ClCompile Include="PocketUtils.cpp" />
+    <ClCompile Include="PocketUI.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Pocket.rc" />
