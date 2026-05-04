@@ -38,6 +38,7 @@ private:
     void DiscardResources();
     std::wstring ResolveAdapterName(const std::string& rawName);
     void RenderCharts(D2D1_RECT_F rect, const std::vector<PocketUtils::PacketData>& packets);
+    std::wstring MaskSensitive(const std::string& input, bool isIP);
 
     HWND m_hWnd;
     ID2D1Factory* m_pFactory;
@@ -66,6 +67,7 @@ private:
     bool m_showAdapters;
     int m_adapterIdx;
     bool m_autoScroll;
+    bool m_privacyMode;
     std::vector<PocketUtils::AdapterInfo> m_availableAdapters;
     std::map<std::string, std::string> m_adapterNameMap;
 };
