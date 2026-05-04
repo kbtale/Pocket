@@ -15,6 +15,8 @@
 #include <thread>
 #include <mutex>
 #include <queue>
+#include <sstream>
+#include <iomanip>
 #include <urlmon.h>
 #include <shellapi.h>
 

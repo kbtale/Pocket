@@ -77,4 +77,6 @@ namespace PocketUtils {
         PacketQueue packet_queue;
         std::atomic<uint32_t> dropped_count;
     };
+
+    std::wstring GetPacketDetails(const PacketData& packet);
 }

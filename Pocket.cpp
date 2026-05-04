@@ -11,14 +11,17 @@ HINSTANCE hInst;
 WCHAR szTitle[MAX_LOADSTRING];
 WCHAR szWindowClass[MAX_LOADSTRING];
 
-PocketUtils::CaptureManager g_CaptureManager;
-std::vector<PocketUtils::AdapterInfo> g_Adapters;
-std::vector<PocketUtils::ParsedPacket> g_Packets;
+HWND hAdapterList, hPacketList, hStartStop, hClear, hAutoScroll, hDetailsPane;
+HFONT hFont, hFixedFont;
+PocketUtils::CaptureEngine engine;
+std::vector<PocketUtils::PacketData> display_packets;
+std::mutex display_mutex;
 
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+void UpdateLayout(HWND hWnd);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -36,7 +39,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     if (!PocketUtils::IsNpcapAvailable()) {
         PocketUtils::TriggerNpcapInstall();
-        return FALSE;
+        if (!PocketUtils::IsNpcapAvailable()) {
+            return FALSE;
+        }
     }
 
     if (!InitInstance (hInstance, nCmdShow))
@@ -101,57 +106,54 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    return TRUE;
 }
 
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    static HWND hCombo;
-    static HWND hBtn;
-    static HWND hList;
-    switch (message)
-    {
-    case WM_CREATE:
-        {
-            INITCOMMONCONTROLSEX icex;
-            icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
-            icex.dwICC = ICC_LISTVIEW_CLASSES;
-            InitCommonControlsEx(&icex);
+LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_CREATE: {
+        hFont = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+        hFixedFont = CreateFontW(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
 
-            hCombo = CreateWindowW(WC_COMBOBOX, L"", 
-                CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_CHILD | WS_OVERLAPPED | WS_VISIBLE | WS_VSCROLL,
-                10, 10, 400, 200, hWnd, (HMENU)IDC_ADAPTER_LIST, hInst, NULL);
+        hAdapterList = CreateWindowW(WC_COMBOBOX, L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 0, 0, 0, 0, hWnd, (HMENU)IDC_ADAPTER_LIST, hInst, nullptr);
+        SendMessage(hAdapterList, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-            hBtn = CreateWindowW(WC_BUTTON, L"Start Capture",
-                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-                420, 10, 120, 25, hWnd, (HMENU)IDC_START_STOP, hInst, NULL);
+        hStartStop = CreateWindowW(WC_BUTTON, L"Start", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hWnd, (HMENU)IDC_START_STOP, hInst, nullptr);
+        SendMessage(hStartStop, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-            CreateWindowW(WC_BUTTON, L"Clear",
-                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                550, 10, 80, 25, hWnd, (HMENU)IDC_CLEAR, hInst, NULL);
+        hClear = CreateWindowW(WC_BUTTON, L"Clear", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hWnd, (HMENU)IDC_CLEAR, hInst, nullptr);
+        SendMessage(hClear, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-            CreateWindowW(WC_BUTTON, L"Auto-scroll",
-                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
-                640, 10, 100, 25, hWnd, (HMENU)IDC_AUTOSCROLL, hInst, NULL);
+        hAutoScroll = CreateWindowW(WC_BUTTON, L"Auto-scroll", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 0, 0, 0, 0, hWnd, (HMENU)IDC_AUTOSCROLL, hInst, nullptr);
+        SendMessage(hAutoScroll, WM_SETFONT, (WPARAM)hFont, TRUE);
+        SendMessage(hAutoScroll, BM_SETCHECK, BST_CHECKED, 0);
 
-            SendMessageW(GetDlgItem(hWnd, IDC_AUTOSCROLL), BM_SETCHECK, BST_CHECKED, 0);
+        hPacketList = CreateWindowW(WC_LISTVIEW, L"", WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_OWNERDATA | WS_BORDER | WS_VSCROLL, 0, 0, 0, 0, hWnd, (HMENU)IDC_PACKET_LIST, hInst, nullptr);
+        SendMessage(hPacketList, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_GRIDLINES);
+        SendMessage(hPacketList, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-            hList = CreateWindowW(WC_LISTVIEW, L"",
-                WS_CHILD | LVS_REPORT | LVS_OWNERDATA | WS_VISIBLE | WS_BORDER | WS_VSCROLL,
-                10, 45, 760, 500, hWnd, (HMENU)IDC_PACKET_LIST, hInst, NULL);
+        hDetailsPane = CreateWindowW(WC_EDIT, L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | WS_BORDER, 0, 0, 0, 0, hWnd, (HMENU)IDC_DETAILS_PANE, hInst, nullptr);
+        SendMessage(hDetailsPane, WM_SETFONT, (WPARAM)hFixedFont, TRUE);
 
-            ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_GRIDLINES);
+        LVCOLUMNW lvc = { 0 };
+        lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+        const wchar_t* headers[] = { L"No.", L"Time", L"Source", L"Destination", L"Protocol", L"Length", L"Info" };
+        int widths[] = { 50, 150, 140, 140, 80, 70, 300 };
 
-            LVCOLUMNW lvc;
-            lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
-            
-            const wchar_t* columns[] = { L"No.", L"Time", L"Source", L"Destination", L"Protocol", L"Length", L"Info" };
-            int widths[] = { 50, 100, 130, 130, 80, 60, 200 };
+        for (int i = 0; i < 7; i++) {
+            lvc.iSubItem = i;
+            lvc.pszText = (LPWSTR)headers[i];
+            lvc.cx = widths[i];
+            SendMessage(hPacketList, LVM_INSERTCOLUMNW, i, (LPARAM)&lvc);
+        }
 
-            for (int i = 0; i < 7; i++) {
-                lvc.iSubItem = i;
-                lvc.pszText = (LPWSTR)columns[i];
-                lvc.cx = widths[i];
-                lvc.fmt = LVCFMT_LEFT;
-                ListView_InsertColumn(hList, i, &lvc);
-            }
+        std::string err;
+        auto adapters = PocketUtils::GetAdapters(err);
+        for (const auto& adapter : adapters) {
+            SendMessageW(hAdapterList, CB_ADDSTRING, 0, (LPARAM)std::wstring(adapter.description.begin(), adapter.description.end()).c_str());
+        }
+        SendMessage(hAdapterList, CB_SETCURSEL, 0, 0);
+
+        SetTimer(hWnd, IDT_TIMER, 100, nullptr);
+        break;
+    }
 
             std::string err;
             g_Adapters = PocketUtils::GetAdapters(err);
@@ -164,124 +166,87 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             SetTimer(hWnd, IDT_TIMER, 100, NULL);
         }
         break;
-    case WM_TIMER:
-        {
-            if (wParam == IDT_TIMER) {
-                PocketUtils::PacketData pkt;
-                bool changed = false;
-                while (g_CaptureManager.GetQueue().Pop(pkt)) {
-                    g_Packets.push_back(PocketUtils::ProtocolParser::Parse(pkt));
-                    changed = true;
-                }
-                if (changed) {
-                    ListView_SetItemCountEx(hList, g_Packets.size(), LVSICF_NOSCROLL);
-                    if (SendMessageW(GetDlgItem(hWnd, IDC_AUTOSCROLL), BM_GETCHECK, 0, 0) == BST_CHECKED) {
-                        ListView_EnsureVisible(hList, g_Packets.size() - 1, FALSE);
+    case WM_SIZE:
+        UpdateLayout(hWnd);
+        break;
+    case WM_COMMAND: {
+        int wmId = LOWORD(wParam);
+        if (wmId == IDC_START_STOP) {
+            if (!engine.IsRunning()) {
+                int sel = (int)SendMessage(hAdapterList, CB_GETCURSEL, 0, 0);
+                std::string err;
+                auto adapters = PocketUtils::GetAdapters(err);
+                if (sel >= 0 && sel < (int)adapters.size()) {
+                    if (engine.Start(adapters[sel].name)) {
+                        SetWindowTextW(hStartStop, L"Stop");
                     }
                 }
+            } else {
+                engine.Stop();
+                SetWindowTextW(hStartStop, L"Start");
             }
+        } else if (wmId == IDC_CLEAR) {
+            std::lock_guard<std::mutex> lock(display_mutex);
+            display_packets.clear();
+            SendMessage(hPacketList, LVM_SETITEMCOUNT, 0, 0);
+            SetWindowTextW(hDetailsPane, L"");
+        } else if (LOWORD(wParam) == IDM_EXIT) {
+            DestroyWindow(hWnd);
         }
         break;
-    case WM_NOTIFY:
-        {
-            LPNMHDR lpnmhdr = (LPNMHDR)lParam;
-            if (lpnmhdr->code == LVN_GETDISPINFO) {
-                NMLVDISPINFO* plvdi = (NMLVDISPINFO*)lParam;
-                if (plvdi->item.mask & LVIF_TEXT) {
-                    int row = plvdi->item.iItem;
-                    int col = plvdi->item.iSubItem;
-                    if (row < (int)g_Packets.size()) {
-                        const auto& p = g_Packets[row];
-                        std::wstring text;
-                        switch (col) {
-                        case 0: text = std::to_wstring(row + 1); break;
-                        case 1: text = PocketUtils::ConvertToWide(p.timestamp); break;
-                        case 2: text = PocketUtils::ConvertToWide(p.src_ip.empty() ? p.src_mac : p.src_ip); break;
-                        case 3: text = PocketUtils::ConvertToWide(p.dest_ip.empty() ? p.dest_mac : p.dest_ip); break;
-                        case 4: text = PocketUtils::ConvertToWide(p.protocol); break;
-                        case 5: text = std::to_wstring(p.length); break;
-                        case 6: text = PocketUtils::ConvertToWide(p.info); break;
-                        }
-                        wcsncpy_s(plvdi->item.pszText, plvdi->item.cchTextMax, text.c_str(), _TRUNCATE);
-                    }
-                }
-            }
-            else if (lpnmhdr->code == NM_CUSTOMDRAW && lpnmhdr->idFrom == IDC_PACKET_LIST) {
-                LPNMLVCUSTOMDRAW lplvcd = (LPNMLVCUSTOMDRAW)lParam;
-                switch (lplvcd->nmcd.dwDrawStage) {
-                case CDDS_PREPAINT:
-                    return CDRF_NOTIFYITEMDRAW;
-                case CDDS_ITEMPREPAINT:
-                    {
-                        int row = (int)lplvcd->nmcd.dwItemSpec;
-                        if (row < (int)g_Packets.size()) {
-                            const auto& p = g_Packets[row];
-                            if (p.info.find("TCP") != std::string::npos || p.info.find("HTTP") != std::string::npos || p.info.find("HTTPS") != std::string::npos) {
-                                lplvcd->clrTextBk = RGB(230, 255, 230);
-                            }
-                            else if (p.info.find("UDP") != std::string::npos || p.info.find("DNS") != std::string::npos) {
-                                lplvcd->clrTextBk = RGB(230, 240, 255);
-                            }
-                            else if (p.info.find("ICMP") != std::string::npos || p.info.find("ARP") != std::string::npos) {
-                                lplvcd->clrTextBk = RGB(255, 230, 230);
-                            }
-                        }
-                        return CDRF_DODEFAULT;
-                    }
-                }
-            }
-        }
-        break;
-    case WM_COMMAND:
-        {
-            int wmId = LOWORD(wParam);
-            int wmEvent = HIWORD(wParam);
-            switch (wmId)
-            {
-            case IDC_START_STOP:
-                if (wmEvent == BN_CLICKED) {
-                    if (g_CaptureManager.IsRunning()) {
-                        g_CaptureManager.Stop();
-                        SetWindowTextW(hBtn, L"Start Capture");
-                        EnableWindow(hCombo, TRUE);
-                    }
-                    else {
-                        int index = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
-                        if (index != CB_ERR && index < (int)g_Adapters.size()) {
-                            if (g_CaptureManager.Start(g_Adapters[index].name)) {
-                                SetWindowTextW(hBtn, L"Stop Capture");
-                                EnableWindow(hCombo, FALSE);
-                            }
+    }
+    case WM_NOTIFY: {
+        LPNMHDR nmhdr = (LPNMHDR)lParam;
+        if (nmhdr->idFrom == IDC_PACKET_LIST) {
+            if (nmhdr->code == LVN_GETDISPINFO) {
+                NMLVDISPINFO* pdi = (NMLVDISPINFO*)lParam;
+                if (pdi->item.mask & LVIF_TEXT) {
+                    std::lock_guard<std::mutex> lock(display_mutex);
+                    if (pdi->item.iItem < (int)display_packets.size()) {
+                        const auto& packet = display_packets[pdi->item.iItem];
+                        auto parsed = PocketUtils::ProtocolParser::Parse(packet);
+                        switch (pdi->item.iSubItem) {
+                            case 0: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%d", pdi->item.iItem + 1); break;
+                            case 1: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.timestamp.c_str()); break;
+                            case 2: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.src_ip.empty() ? parsed.src_mac.c_str() : parsed.src_ip.c_str()); break;
+                            case 3: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.dest_ip.empty() ? parsed.dest_mac.c_str() : parsed.dest_ip.c_str()); break;
+                            case 4: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.protocol.c_str()); break;
+                            case 5: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%d", parsed.length); break;
+                            case 6: swprintf_s(pdi->item.pszText, pdi->item.cchTextMax, L"%S", parsed.info.c_str()); break;
                         }
                     }
                 }
-                break;
-            case IDC_CLEAR:
-                if (wmEvent == BN_CLICKED) {
-                    g_Packets.clear();
-                    ListView_SetItemCountEx(hList, 0, LVSICF_NOSCROLL);
-                    ListView_Update(hList, -1);
+            } else if (nmhdr->code == LVN_ITEMCHANGED) {
+                LPNMLISTVIEW pnmv = (LPNMLISTVIEW)lParam;
+                if ((pnmv->uChanged & LVIF_STATE) && (pnmv->uNewState & LVIS_SELECTED)) {
+                    std::lock_guard<std::mutex> lock(display_mutex);
+                    if (pnmv->iItem >= 0 && pnmv->iItem < (int)display_packets.size()) {
+                        SetWindowTextW(hDetailsPane, PocketUtils::GetPacketDetails(display_packets[pnmv->iItem]).c_str());
+                    }
                 }
-                break;
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
             }
         }
         break;
-    case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            EndPaint(hWnd, &ps);
+    }
+    case WM_TIMER: {
+        if (wParam == IDT_TIMER) {
+            std::vector<PocketUtils::PacketData> new_packets;
+            engine.GetPackets(new_packets);
+            if (!new_packets.empty()) {
+                std::lock_guard<std::mutex> lock(display_mutex);
+                display_packets.insert(display_packets.end(), new_packets.begin(), new_packets.end());
+                SendMessage(hPacketList, LVM_SETITEMCOUNT, (WPARAM)display_packets.size(), 0);
+                if (SendMessage(hAutoScroll, BM_GETCHECK, 0, 0) == BST_CHECKED) {
+                    SendMessage(hPacketList, LVM_ENSUREVISIBLE, display_packets.size() - 1, FALSE);
+                }
+            }
         }
         break;
+    }
     case WM_DESTROY:
+        engine.Stop();
+        DeleteObject(hFont);
+        DeleteObject(hFixedFont);
         PostQuitMessage(0);
         break;
     default:
@@ -290,17 +255,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    UNREFERENCED_PARAMETER(lParam);
-    switch (message)
-    {
-    case WM_INITDIALOG:
-        return (INT_PTR)TRUE;
+void UpdateLayout(HWND hWnd) {
+    RECT rect;
+    GetClientRect(hWnd, &rect);
+    int w = rect.right - rect.left;
+    int h = rect.bottom - rect.top;
 
+    MoveWindow(hAdapterList, 10, 10, w - 320, 30, TRUE);
+    MoveWindow(hStartStop, w - 300, 10, 80, 25, TRUE);
+    MoveWindow(hClear, w - 210, 10, 80, 25, TRUE);
+    MoveWindow(hAutoScroll, w - 120, 10, 110, 25, TRUE);
+
+    int listHeight = (h - 50) * 6 / 10;
+    int detailsHeight = (h - 50) - listHeight - 10;
+
+    MoveWindow(hPacketList, 10, 45, w - 20, listHeight, TRUE);
+    MoveWindow(hDetailsPane, 10, 45 + listHeight + 5, w - 20, detailsHeight, TRUE);
+}
+
+INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    UNREFERENCED_PARAMETER(lParam);
+    switch (message) {
+    case WM_INITDIALOG: return (INT_PTR)TRUE;
     case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-        {
+        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) {
             EndDialog(hDlg, LOWORD(wParam));
             return (INT_PTR)TRUE;
         }

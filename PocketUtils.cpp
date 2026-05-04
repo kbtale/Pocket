@@ -34,7 +34,17 @@ namespace PocketUtils {
         HRESULT hr = URLDownloadToFileW(NULL, L"https://npcap.com/dist/npcap-1.87.exe", installer_path.c_str(), 0, NULL);
         if (SUCCEEDED(hr)) {
             MessageBoxW(NULL, L"Npcap is required but was not found. The installer will now launch—please follow the prompts to complete the setup.", L"Pocket - Setup Required", MB_OK | MB_ICONINFORMATION);
-            ShellExecuteW(NULL, L"runas", installer_path.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            
+            SHELLEXECUTEINFOW sei = { sizeof(sei) };
+            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+            sei.lpVerb = L"runas";
+            sei.lpFile = installer_path.c_str();
+            sei.nShow = SW_SHOWNORMAL;
+
+            if (ShellExecuteExW(&sei)) {
+                WaitForSingleObject(sei.hProcess, INFINITE);
+                CloseHandle(sei.hProcess);
+            }
         }
         else {
             MessageBoxW(NULL, L"Failed to download Npcap driver. Please install Npcap manually.", L"Pocket - Error", MB_OK | MB_ICONERROR);
@@ -340,5 +350,58 @@ namespace PocketUtils {
             packet_queue.Push(packet);
         }
         running = false;
+    }
+
+    std::wstring GetPacketDetails(const PacketData& packet) {
+        ParsedPacket parsed = ProtocolParser::Parse(packet);
+        std::wstringstream ss;
+
+        ss << L"--- Frame Details ---\r\n";
+        ss << L"Arrival Time: " << std::wstring(parsed.timestamp.begin(), parsed.timestamp.end()) << L"\r\n";
+        ss << L"Frame Length: " << parsed.length << L" bytes\r\n\r\n";
+
+        ss << L"--- Ethernet II ---\r\n";
+        ss << L"Source MAC: " << std::wstring(parsed.src_mac.begin(), parsed.src_mac.end()) << L"\r\n";
+        ss << L"Dest MAC: " << std::wstring(parsed.dest_mac.begin(), parsed.dest_mac.end()) << L"\r\n\r\n";
+
+        if (parsed.protocol != "ARP" && !parsed.src_ip.empty()) {
+            ss << L"--- Internet Protocol ---\r\n";
+            ss << L"Source IP: " << std::wstring(parsed.src_ip.begin(), parsed.src_ip.end()) << L"\r\n";
+            ss << L"Dest IP: " << std::wstring(parsed.dest_ip.begin(), parsed.dest_ip.end()) << L"\r\n\r\n";
+        }
+
+        if (parsed.src_port != 0 || parsed.dest_port != 0) {
+            ss << L"--- Transport Layer ---\r\n";
+            ss << L"Protocol: " << std::wstring(parsed.protocol.begin(), parsed.protocol.end()) << L"\r\n";
+            ss << L"Src Port: " << parsed.src_port << L"\r\n";
+            ss << L"Dest Port: " << parsed.dest_port << L"\r\n\r\n";
+        }
+
+        ss << L"--- Raw Data (Hex) ---\r\n";
+        const u_char* data = packet.data.data();
+        uint32_t len = (uint32_t)packet.data.size();
+
+        for (uint32_t i = 0; i < len; i += 16) {
+            ss << std::hex << std::setw(4) << std::setfill(L'0') << i << L":  ";
+            
+            for (uint32_t j = 0; j < 16; j++) {
+                if (i + j < len)
+                    ss << std::hex << std::setw(2) << std::setfill(L'0') << (int)data[i + j] << L" ";
+                else
+                    ss << L"   ";
+                if (j == 7) ss << L" ";
+            }
+
+            ss << L" ";
+            for (uint32_t j = 0; j < 16; j++) {
+                if (i + j < len) {
+                    char c = (char)data[i + j];
+                    ss << (isprint((unsigned char)c) ? (wchar_t)c : L'.');
+                }
+            }
+            ss << L"\r\n";
+        }
+
+        return ss.str();
     }
 }
